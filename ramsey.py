@@ -1,23 +1,26 @@
-
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 # Ramsey (for Telegram)
 # By: Lemerchand
 #
 # LAST MODIFICATION:
-# 9.26.2021 - 11:40am
+# 1/15/2022 @  2:30pm
+# 7/1/2021  @  10pm
 #
 #   TODO:
 #       + Refactor and abstract
 #       +
 #       +
 #
+# cspell:disable
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 import lists
+from weather import getweather
 import imdb
 from random import randint
 from collections import namedtuple
 from richlog import dbg
 import pendulum as pend
+# Load the Telegram lib
 from telegram import (
     ReplyKeyboardMarkup,
     InlineKeyboardMarkup,
@@ -36,7 +39,7 @@ from telegram.ext import (
 
 from rich.console import Console
 
-from telegram_token import telegram_token 
+from telegram__token import telegram_token
 import re
 from vf import *
 from pathlib import Path
@@ -46,12 +49,14 @@ import wolframalpha
 
 wolf = wolframalpha.Client('G9QEXJ-TTYY8Y9JUQ')
 
+# Setup updater without token and alias the dispatcher for ease
 updater = Updater(
     token=telegram_token,
     use_context=True
 )
+# cSPell:enable
 ######################################################################
-#   __init__
+#   Misc Init
 ######################################################################
 
 # Dispatcher Shortcut
@@ -64,10 +69,17 @@ mdb = imdb.IMDb()
 # Console
 c = Console()
 
-# Constants
+
+# Open Rooms
+open_files = {}
+
 MAINDIR = Path.cwd()
 DATADIR = MAINDIR / 'data'
 USERDIR = DATADIR / 'users'
+
+######################################################################
+#  Conversation States, Buttons, Keyboards
+######################################################################
 
 # Generic lists entries get the 0s
 NONE, FIRST, SECOND = 0, 1, 2
@@ -81,19 +93,20 @@ AWAIT_ANOTHER_OR_DONE = 22
 #
 cur_state = NONE
 
-# TODO: Clean this shit up. First, declae buttons, then rows, then keyboards.
-
 BR_YN = [
     InlineKeyboardButton('Yes', callback_data=str('Yes')),
     InlineKeyboardButton('No', callback_data=str('No'))
 ]
-KBD_YN = [InlineKeyboardMarkup(BR_YN)]
 
 BR_BACK_DONE = [
     InlineKeyboardButton('Back', callback_data=str('back')),
     InlineKeyboardButton('Done', callback_data=str('done'))
 ]
-KBD_BACK_DONE = InlineKeyboardMarkup(BR_BACK_DONE)
+
+BR_ANOTHER_OR_DONE = [
+    InlineKeyboardButton('Another', callback_data=str('random')),
+    InlineKeyboardButton('Done', callback_data=str('done'))
+]
 
 BR_DONE = [InlineKeyboardButton('Done', callback_data=str('done'))]
 
@@ -109,23 +122,25 @@ BR_ADD_OR_DONE = [
     InlineKeyboardButton('Add', callback_data=str('add')),
     InlineKeyboardButton('Done', callback_data=str('done'))
 ]
+
 KBD_ADD_OR_DONE = InlineKeyboardMarkup(BR_ADD_OR_DONE)
 
-BR_ANOTHER_OR_DONE = [
-    InlineKeyboardButton('Another', callback_data=str('random')),
-    InlineKeyboardButton('Done', callback_data=str('done'))
-]
+KBD_BACK_DONE = InlineKeyboardMarkup(BR_BACK_DONE)
 
-# Open Room files
-open_files = {}
+KBD_YN = [InlineKeyboardMarkup(BR_YN)]
 
 
 RE_RANGE = re.compile(r'\d+\-\d+')
 
 
 ######################################################################
-#   Begin Dem Funky Shuns                                            #
+# Functions
 ######################################################################
+
+# # # # # # # # # # # # # # # # # # # # #
+#  Silly Stuff
+# # # # # # # # # # # # # # # # # # # # #
+
 
 def start(update, context):
     context.bot.send_message(
@@ -136,10 +151,7 @@ def start(update, context):
 
 def flip_coin(update, context):
     side = random.random()
-    if side >= .5:
-        side = 'heads'
-    else:
-        side = 'tails'
+    side = 'heads' if side >= .5 else 'tails'
     update.message.reply_text(
         'It landed on ' + side + '.'
     )
@@ -152,7 +164,7 @@ def roll_dice(update, context):
     match = re.match(diceRegex, args)
     q = match.group(1)
     t = match.group(2)
-    for i in range(int(q)):
+    for _ in range(int(q)):
         roll = random.randint(1, int(t))
         text += str(roll) + '\n'
     update.message.reply_text('You rolled...\n' + text)
@@ -223,26 +235,10 @@ def set_timer(update, context, deadline, name):
 
     perserve_job_q()
 
-
-def handle_unknown(update, context):
-    if update.message.text.startswith('Ramsey, '):
-        try:
-            q = update.message.text[update.message.text.find('Ramsey, ') + 7:]
-            log.info('Query to Wolfram Alpha for ' + q)
-            a = wolf.query(update.message.text[7:])
-            ans = next(a.results).text
-            update.message.reply_text(ans)
-
-        except(Exception):
-            update.message.reply_text(
-                'Sorry, I couldn\'t find anything on that...'
-                'maybe try rephrasing it?'
-            )
-
-
 # # # # # # # # # # # # # # # # # #
 # List Handling
 # # # # # # # # # # # # # # # # # #
+
 
 def todo(update, context):
 
@@ -251,7 +247,7 @@ def todo(update, context):
         context.args)
 
     # Sort into to_remove or into to_add
-    todos = [i for i in text.split(', ') if not i == '']
+    todos = [i for i in text.split(', ') if i != '']
 
     try:
         c.print(f'{context.user_data["query"]=}')
@@ -262,8 +258,7 @@ def todo(update, context):
 
         for todo in todos:
             list_data.add(timestamp, todo, tags, deadline, commit=False)
-        else:
-            list_data.commit()
+        list_data.commit()
 
         if deadline:
             set_timer(update, context, deadline, todos[0])
@@ -297,7 +292,7 @@ def list_response2(update, context,
     else:
         entries = list_data.entries
 
-    # TODO: Refactor this. This is not a very efficient way of doing this!
+    # TODO: Refactor gsbrithis. This is not a very efficient way of doing this!
     # BUG: For some reason some of this shit is crashing in the live version
     #       specifically #miles #squat. It's possible that the error stems from
     #       kbd_btns = [] and not [[]]
@@ -310,12 +305,10 @@ def list_response2(update, context,
         if col == 0:
             kbd_btns.append([])
 
-        kbd_btns[len(kbd_btns) - 1].append(
-            InlineKeyboardButton(
-                str(entry.text),
-                callback_data=f'{i+1}'
-            )
-        )
+        kbd_btns[-1].append(InlineKeyboardButton(
+            str(entry.text),
+            callback_data=f'{i+1}'
+            ))
         btn_count += 1
 
     kbd_btns.append(BR_DONE)
@@ -366,12 +359,14 @@ def untrack(update, context):
     return AWAIT_INSPECT_OR_DONE
 
 
-def find_list_data(update, context, list_type):
+def find_list_data(update, context, list_type, brute_force_id=None):
     try:
         chatid = str(update.message.chat_id)
     except AttributeError:
         update = context.user_data['update']
         chatid = update.message.chat_id
+    except BaseException:
+        chatid = brute_force_id
     ramfile = str(chatid) + list_type.__name__
     if ramfile in open_files:
         return open_files[ramfile]
@@ -399,7 +394,7 @@ def tracker(update, context):
         context.args)
 
     # Sort into to_remove or into to_add
-    items = [i for i in text.split(', ') if not i == '']
+    items = [i for i in text.split(', ') if i != '']
 
     try:
         c.print(f'{context.user_data["query"]=}')
@@ -411,8 +406,7 @@ def tracker(update, context):
         for item in items:
             list_data.add(timestamp, item, tags, start_time,
                           deadline, commit=False)
-        else:
-            list_data.commit()
+        list_data.commit()
 
     list_response2(update, context, list_data, items,
                    tags, args, quantity=quantity)
@@ -431,8 +425,8 @@ def inspect_tracking(update, context):
     entry = tracking_list.entries[int(q.data) - 1]
 
     display_text = f'🎯 <u><b>{entry.text}</b></u>'
-    display_text += f'\n\n⏲️ Start time:        {str(entry.started())}'
-    display_text += f'\n⏲️ End time:          {str(entry.ended())}'
+    display_text += f'\n\n⏲️ Start time:        {entry.started()}'
+    display_text += f'\n⏲️ End time:          {entry.ended()}'
     display_text += f'\n🏷️ Tags:        {entry.tags}'
 
     kbd_btns = [BR_BACK_DONE, BR_DEL]
@@ -455,7 +449,7 @@ def shopping_list(update, context):
         context.args)
 
     # Sort into to_remove or into to_add
-    items = [i for i in text.split(', ') if not i == '']
+    items = [i for i in text.split(', ') if i != '']
 
     try:
         c.print(f'{context.user_data["query"]=}')
@@ -466,8 +460,7 @@ def shopping_list(update, context):
 
         for item in items:
             list_data.add(timestamp, item, tags, quantity, commit=False)
-        else:
-            list_data.commit()
+        list_data.commit()
 
     list_response2(update, context, list_data, items,
                    tags, args, quantity=quantity)
@@ -521,7 +514,7 @@ def random_movie(update, context):
 
     list_data = find_list_data(update, context, lists.watchlist)
     movie_count = len(list_data.entries)
-    random_movie_id = randint(0, movie_count-1)
+    random_movie_id = randint(0, movie_count - 1)
     context.user_data['movie'] = list_data.entries[random_movie_id]
     inspect_movie(update, context, is_another_random_movie)
 
@@ -531,8 +524,8 @@ def watchlist(update, context):
         movie_query = ''.join(context.args[:])
     except TypeError:
         movie_url = context.user_data['movie_url']
-        movie_id = movie_url[movie_url.rfind('tt')+2:]
-        movie_query = 'LINK' 
+        movie_id = movie_url[movie_url.rfind('tt') + 2:]
+        movie_query = 'LINK'
     if not movie_query:
         context.user_data['update'] = update
         context.user_data['context'] = context
@@ -547,7 +540,7 @@ def watchlist(update, context):
 
     # TODO: give this it's own function
     if movie_query == 'LINK':
-        movie = mdb.get_movie(movie_id)
+        movie = mdb.get_movie(int(movie_id))
     else:
         movies = mdb.search_movie(movie_query)
         movie = mdb.get_movie(movies[0].movieID)
@@ -558,7 +551,19 @@ def watchlist(update, context):
     runtime = movie['runtime']
     genre = ', '.join(movie['genre'])
     rating = movie['rating']
-    desc = movie['plot outline']
+    try:
+        desc = movie['plot outline']
+    except KeyError:
+        try:
+            c.log('"Plot Outline" key not found...trying "Plot"')
+            desc = movie['plot'][0]
+        except KeyError:
+            try:
+                c.log('P"lot" key not found...trying "Synopsis"')
+                desc = movie['synopsis']
+            except KeyError:
+                desc = 'N/A'
+
     director = movie['director'][0]['name']
     writer = movie['writer'][0]['name']
     try:
@@ -577,7 +582,7 @@ def watchlist(update, context):
     context.user_data['update'] = update
     context.user_data['context'] = context
 
-    auteur = True if director == writer else False
+    auteur = director == writer
 
     inspect_movie(update, context)
     return AWAIT_INSPECT_OR_DONE
@@ -614,7 +619,7 @@ def inspect_movie(update, context, is_another_random_movie=False):
     except AttributeError:
         q = update
         q_chat_id = update.message.chat_id
-        if is_random_movie is not True:
+        if not is_random_movie:
             entry = context.user_data['movie']
         elif is_another_random_movie:
             isreply = True
@@ -622,7 +627,7 @@ def inspect_movie(update, context, is_another_random_movie=False):
         movie_list = find_list_data(q, context, lists.watchlist)
         entry = context.user_data['movie']
 
-    auteur = True if entry.director == entry.writer else False
+    auteur = entry.director == entry.writer
 
     result = ''
     result += f'<u><b>{entry.text} - {entry.year}</b></u>  -  ⭐ {entry.rating}   -  ⏲️{entry.runtime[0]}mins\n'
@@ -639,14 +644,14 @@ def inspect_movie(update, context, is_another_random_movie=False):
     context.user_data['query'] = q
     kbd_btns = []
     kbd = InlineKeyboardMarkup(kbd_btns)
-    if is_random_movie is True:
+    if is_random_movie:
         kbd_btns.append(BR_ANOTHER_OR_DONE)
         q.message.reply_text(result,
                              reply_markup=kbd,
                              parse_mode='HTML'
                              )
         return AWAIT_ANOTHER_OR_DONE
-    elif isreply is True:
+    elif isreply:
         kbd_btns.append(BR_BACK_DONE)
         kbd_btns.append(BR_DEL)
         q.message.edit_text(result,
@@ -676,12 +681,30 @@ def remove_from_watchlist(update, context):
     return AWAIT_INSPECT_OR_DONE
 
 # # # # # # # # # # # # # # # # # #
-# Job Scheduling
+# Generic Handlers
 # # # # # # # # # # # # # # # # # #
 
 
+def handle_unknown(update, context):
+    if update.message.text.startswith('Ramsey, '):
+        try:
+            q = update.message.text[update.message.text.find('Ramsey, ') + 7:]
+            log.info('Query to Wolfram Alpha for ' + q)
+            a = wolf.query(update.message.text[7:])
+            ans = next(a.results).text
+            update.message.reply_text(ans)
+
+        except(Exception):
+            update.message.reply_text(
+                'Sorry, I couldn\'t find anything on that...'
+                'maybe try rephrasing it?'
+            )
+
+
 def periodic(context: CallbackContext):
-    c.print('Ping...')
+    time = pend.now()
+    c.print(f'{time.hour} and {time.minute}')
+    # briefing()
 
 
 def perserve_job_q():
@@ -708,7 +731,7 @@ def restore_job_q():
 
 
 def handle_urls(update, context):
-    imdb_url = update.message.text[0:update.message.text.find('\n')]
+    imdb_url = update.message.text[:update.message.text.find('\n')]
     if 'www.imdb.com' in imdb_url:
         context.user_data['context'] = context
         context.user_data['movie_url'] = imdb_url
@@ -717,6 +740,24 @@ def handle_urls(update, context):
         return AWAIT_BACK_OR_ADD_OR_DONE
 
     return ConversationHandler.END
+
+
+# def briefing():
+    # room = 181177492
+    # temp, feels_like, low_temp, high_temp, humidity, wind_report = getweather()
+    # report = f'🌡️It is currently {temp} but feels like {feels_like}.'
+    # report += f'\n🆒Today\'s low: {low_temp} \n🔝Today\'s high: {high_temp}'
+    # report += f'\n♨️The humidity is {humidity}%'
+    # report += f'\n🌬️Wind be like {wind_report}'
+    # updater.bot.send_message(room, report)
+
+    # update = None
+    # context = None
+    # list_data = (update, context, lists.TodoList, room)
+
+    # updater.bot.send_message(room, list_data[2])
+
+
 # # # # # # # # # # # # # # # # # #
 # Conversations
 # # # # # # # # # # # # # # # # # #
@@ -836,8 +877,9 @@ watchlist_conv = ConversationHandler(
     fallbacks=[(CommandHandler('end_conv', end_conv))],
     conversation_timeout=120
 )
+
 ######################################################################
-#   __init__                                                        #
+#  MAIN                                                       #
 ######################################################################
 
 
@@ -855,7 +897,7 @@ def main():
     dp.add_handler(track_conv)
     dp.add_handler(shopping_conv)
 
-    jobs.run_repeating(periodic, 120, 120, name='periodic')
+    jobs.run_repeating(periodic, 130, 0, name='periodic')
     restore_job_q()
     updater.start_polling()
     updater.idle()
@@ -863,4 +905,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
