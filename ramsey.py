@@ -546,11 +546,23 @@ def watchlist(update, context):
         movie = mdb.get_movie(movies[0].movieID)
     imdbID = movie['imdbID']
     title = movie['title']
-    cover = movie['cover url']
-    year = movie['year']
-    runtime = movie['runtime']
     genre = ', '.join(movie['genre'])
-    rating = movie['rating']
+    try:
+        cover = movie['cover url']
+    except KeyError:
+        cover = 'N/A'
+    try:
+        year = movie['year']
+    except KeyError:
+        year = 'N/A'
+    try:
+        runtime = movie['runtime']
+    except KeyError:
+        runtime = 'N/A'
+    try:
+        rating = movie['rating']
+    except KeyError:
+        rating = 'N/A'
     try:
         desc = movie['plot outline']
     except KeyError:
