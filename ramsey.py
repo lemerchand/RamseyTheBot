@@ -305,11 +305,14 @@ def list_response2(update, context,
         if col == 0:
             kbd_btns.append([])
 
-        kbd_btns[-1].append(InlineKeyboardButton(
-            str(entry.text),
-            callback_data=f'{i+1}'
-            ))
-        btn_count += 1
+        try:
+            kbd_btns[-1].append(InlineKeyboardButton(
+                str(entry.text),
+                callback_data=f'{i+1}'
+                ))
+            btn_count += 1
+        except AttributeError:
+            pass
 
     kbd_btns.append(BR_DONE)
 
