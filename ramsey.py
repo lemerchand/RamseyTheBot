@@ -305,14 +305,11 @@ def list_response2(update, context,
         if col == 0:
             kbd_btns.append([])
 
-        try:
-            kbd_btns[-1].append(InlineKeyboardButton(
-                str(entry.text),
-                callback_data=f'{i+1}'
-                ))
-            btn_count += 1
-        except AttributeError:
-            pass
+        kbd_btns[-1].append(InlineKeyboardButton(
+            str(entry.text),
+            callback_data=f'{i+1}'
+            ))
+        btn_count += 1
 
     kbd_btns.append(BR_DONE)
 
@@ -610,7 +607,7 @@ def add_to_watchlist(update, context):
     movie = context.user_data['movie']
     uu = context.user_data['update']
     list_data = find_list_data(uu, cc, lists.watchlist)
-    list_data.add(pend.now(), '', (), movie)
+    list_data.add(pend.now(), movie['title'], (), movie)
     end_conv(update, context)
 
 
