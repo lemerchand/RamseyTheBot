@@ -607,7 +607,7 @@ def add_to_watchlist(update, context):
     movie = context.user_data['movie']
     uu = context.user_data['update']
     list_data = find_list_data(uu, cc, lists.watchlist)
-    list_data.add(pend.now(), movie['title'], (), movie)
+    list_data.add(pend.now(), ' ', (), movie)
     end_conv(update, context)
 
 
